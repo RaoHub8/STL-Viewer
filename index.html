@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>STL CAD Inspector | Nephelometer v3.0</title>
+    <title>STL Metrology Lab | Nephelometer v3.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     
@@ -23,10 +23,11 @@
         .custom-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
         .custom-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
         
-        /* Custom Sliders */
         input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #3b82f6; cursor: pointer; margin-top: -6px; box-shadow: 0 0 5px rgba(0,0,0,0.5); }
         input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #334155; border-radius: 2px; }
+        
+        .measure-active { cursor: crosshair !important; }
     </style>
 </head>
 <body class="h-screen w-screen overflow-hidden flex flex-col">
@@ -34,13 +35,16 @@
     <!-- Navbar -->
     <nav class="bg-slate-900 border-b border-slate-800 h-16 flex items-center px-6 justify-between flex-shrink-0 z-10 shadow-md">
         <div class="flex items-center space-x-3">
-            <span class="text-2xl">🧊</span>
-            <span class="font-bold text-xl tracking-tight text-white">CAD<span class="text-brand-500 text-blue-500">Inspector</span></span>
-            <span class="ml-4 px-2.5 py-0.5 rounded text-xs font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">v3.0 Internal Verification</span>
+            <span class="text-2xl">🔬</span>
+            <span class="font-bold text-xl tracking-tight text-white">STL<span class="text-brand-500 text-blue-500">Metrology</span></span>
+            <span class="ml-4 px-2.5 py-0.5 rounded text-xs font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">v3.0 Engineering Suite</span>
         </div>
-        <div>
-            <label for="file-upload" class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-md text-sm font-semibold transition-colors shadow-sm flex items-center gap-2">
-                <span>📁</span> Load .STL File
+        <div class="flex gap-3">
+            <div id="recording-indicator" class="hidden items-center gap-2 text-rose-500 font-bold text-sm bg-rose-500/10 px-3 rounded animate-pulse">
+                <span>🔴</span> Recording Video...
+            </div>
+            <label for="file-upload" class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-md text-sm font-semibold transition-colors shadow-sm">
+                Load .STL File
             </label>
             <input id="file-upload" type="file" accept=".stl" class="hidden" onchange="handleFileSelect(event)">
         </div>
@@ -58,9 +62,13 @@
                 </div>
             </div>
 
+            <!-- Floating Measurement Display -->
+            <div id="measurement-display" class="hidden absolute top-6 left-1/2 transform -translate-x-1/2 bg-slate-900/90 border-2 border-emerald-500 text-emerald-400 px-6 py-2 rounded-lg font-mono text-lg font-bold shadow-[0_0_15px_rgba(16,185,129,0.3)] z-20 backdrop-blur-sm pointer-events-none">
+                Distance: <span id="dist-value">0.00</span> mm
+            </div>
+
             <div id="canvas-container"></div>
             
-            <!-- Controls Hint -->
             <div class="absolute bottom-4 left-4 bg-slate-900/80 backdrop-blur border border-slate-700 p-3 rounded-lg text-xs text-slate-400 flex gap-4 pointer-events-none z-10">
                 <div class="flex items-center gap-1"><span>🖱️</span> Left Click: Rotate</div>
                 <div class="flex items-center gap-1"><span>🖱️</span> Right Click: Pan</div>
@@ -68,52 +76,49 @@
             </div>
         </div>
 
-        <!-- RIGHT: Tools & Views (380px wide) -->
-        <div class="w-[380px] bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0 z-10 shadow-xl overflow-y-auto custom-scroll">
+        <!-- RIGHT: Auto-Analyzer & Tools (400px wide) -->
+        <div class="w-[400px] bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0 z-10 shadow-xl overflow-y-auto custom-scroll">
             
-            <!-- 1. File Info Panel -->
+            <!-- File Info & Outer Dimension Panel -->
             <div class="p-5 border-b border-slate-800 bg-slate-800/30">
                 <div id="no-file-msg" class="text-sm text-slate-500 text-center py-2">Load an STL to begin inspection.</div>
                 
                 <div id="analysis-results" class="hidden space-y-4">
                     <div class="flex justify-between items-end mb-2">
                         <span class="text-[10px] uppercase font-bold text-slate-500">Loaded File</span>
-                        <span id="filename-display" class="font-mono text-xs text-blue-400 truncate max-w-[200px]"></span>
+                        <span id="filename-display" class="font-mono text-[10px] text-blue-400 truncate max-w-[200px]"></span>
                     </div>
                     
                     <div class="bg-slate-900 rounded border border-slate-700 p-3">
-                        <div class="text-xs font-bold text-slate-400 uppercase mb-2 flex justify-between">
+                        <div class="text-xs font-bold text-slate-400 uppercase mb-2">
                             <span>Bounding Box (X,Y,Z)</span>
-                            <span class="text-[10px] bg-slate-800 px-1 rounded">Target: 30x20x15</span>
                         </div>
                         <div class="grid grid-cols-3 gap-2 text-center">
-                            <div class="bg-slate-800 rounded p-1.5 border border-slate-700" id="dim-x-card">
+                            <div class="bg-slate-800 rounded p-1.5 border border-slate-700">
                                 <div class="text-[10px] text-slate-500 font-bold">L (max)</div>
-                                <div class="font-mono text-sm" id="dim-x">--</div>
+                                <div class="font-mono text-sm text-blue-400" id="dim-x">--</div>
                             </div>
-                            <div class="bg-slate-800 rounded p-1.5 border border-slate-700" id="dim-y-card">
+                            <div class="bg-slate-800 rounded p-1.5 border border-slate-700">
                                 <div class="text-[10px] text-slate-500 font-bold">W (mid)</div>
-                                <div class="font-mono text-sm" id="dim-y">--</div>
+                                <div class="font-mono text-sm text-blue-400" id="dim-y">--</div>
                             </div>
-                            <div class="bg-slate-800 rounded p-1.5 border border-slate-700" id="dim-z-card">
+                            <div class="bg-slate-800 rounded p-1.5 border border-slate-700">
                                 <div class="text-[10px] text-slate-500 font-bold">H (min)</div>
-                                <div class="font-mono text-sm" id="dim-z">--</div>
+                                <div class="font-mono text-sm text-blue-400" id="dim-z">--</div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 2. Interactive Tools -->
             <div class="p-5 flex-1 opacity-50 pointer-events-none transition-opacity space-y-6" id="tools-panel">
                 
-                <!-- CAD Navigation Views (Fusion 360 Style) -->
+                <!-- Camera Views -->
                 <div>
                     <h2 class="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
                         <span>🎥</span> Camera Views
                     </h2>
                     
-                    <!-- View Cube Button Layout -->
                     <div class="grid grid-cols-3 gap-2 mb-2">
                         <button class="bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 rounded p-2 text-xs font-semibold text-slate-300 transition-colors" onclick="setView('top')">Top</button>
                         <button class="bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 rounded p-2 text-xs font-semibold text-slate-300 transition-colors" onclick="setView('front')">Front</button>
@@ -129,51 +134,76 @@
                     </button>
                 </div>
 
-                <!-- X-Ray & Cross-Section Slicers -->
+                <!-- Advanced Metrology Tools -->
                 <div>
                     <h2 class="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
-                        <span>✂️</span> X-Ray & Slicers
+                        <span>🛠️</span> Advanced Tools
                     </h2>
-                    
-                    <div class="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
-                        <!-- Wireframe Toggle -->
-                        <div class="flex justify-between items-center mb-5 pb-4 border-b border-slate-700">
-                            <span class="text-sm font-semibold text-slate-200">X-Ray (Wireframe)</span>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="wireframe-toggle" class="sr-only peer" onchange="applyMaterialState()">
-                                <div class="w-9 h-5 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
-                            </label>
-                        </div>
-
-                        <!-- X, Y, Z Sliders -->
-                        <div class="space-y-4">
-                            <div>
-                                <div class="flex justify-between text-xs text-slate-400 mb-1">
-                                    <span class="font-bold text-red-400">X-Axis Cut</span>
-                                    <span id="val-x" class="font-mono">OFF</span>
-                                </div>
-                                <input type="range" id="clip-x" min="-20" max="20" value="20" step="0.1" oninput="updateClipping()">
-                            </div>
-                            <div>
-                                <div class="flex justify-between text-xs text-slate-400 mb-1">
-                                    <span class="font-bold text-green-400">Y-Axis Cut</span>
-                                    <span id="val-y" class="font-mono">OFF</span>
-                                </div>
-                                <input type="range" id="clip-y" min="-20" max="20" value="20" step="0.1" oninput="updateClipping()">
-                            </div>
-                            <div>
-                                <div class="flex justify-between text-xs text-slate-400 mb-1">
-                                    <span class="font-bold text-blue-400">Z-Axis Cut</span>
-                                    <span id="val-z" class="font-mono">OFF</span>
-                                </div>
-                                <input type="range" id="clip-z" min="-20" max="20" value="20" step="0.1" oninput="updateClipping()">
-                            </div>
-                        </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button id="btn-measure" class="flex flex-col items-center justify-center bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg p-3 transition-colors" onclick="toggleMeasurement()">
+                            <span class="text-xl mb-1">📏</span>
+                            <span class="text-xs font-semibold text-slate-300">Calipers</span>
+                            <span class="text-[9px] text-slate-500 mt-0.5">Point-to-Point</span>
+                        </button>
                         
-                        <button class="w-full mt-4 bg-slate-700 hover:bg-slate-600 text-white text-xs py-2 rounded transition-colors" onclick="resetClipping()">
-                            Reset Slicers
+                        <button id="btn-overhang" class="flex flex-col items-center justify-center bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg p-3 transition-colors" onclick="toggleOverhangs()">
+                            <span class="text-xl mb-1">🔴</span>
+                            <span class="text-xs font-semibold text-slate-300">Printability</span>
+                            <span class="text-[9px] text-slate-500 mt-0.5">Overhang Check</span>
+                        </button>
+
+                        <button class="flex flex-col items-center justify-center bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg p-3 transition-colors" onclick="exportReport()">
+                            <span class="text-xl mb-1">📸</span>
+                            <span class="text-xs font-semibold text-slate-300">Report + SS</span>
+                            <span class="text-[9px] text-slate-500 mt-0.5">PNG & TXT</span>
+                        </button>
+
+                        <button class="flex flex-col items-center justify-center bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg p-3 transition-colors" onclick="recordVideo()">
+                            <span class="text-xl mb-1">🎥</span>
+                            <span class="text-xs font-semibold text-slate-300">Record PPT</span>
+                            <span class="text-[9px] text-slate-500 mt-0.5">5s Rotation (.webm)</span>
                         </button>
                     </div>
+                </div>
+
+                <!-- Cross-Section Slicers -->
+                <div class="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
+                    <div class="flex justify-between items-center mb-4 pb-4 border-b border-slate-700">
+                        <span class="text-sm font-semibold text-slate-200">X-Ray (Wireframe)</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="wireframe-toggle" class="sr-only peer" onchange="applyMaterialState()">
+                            <div class="w-9 h-5 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                        </label>
+                    </div>
+
+                    <div class="text-sm font-semibold text-slate-200 mb-3">Cross-Section Slicers</div>
+                    <div class="space-y-4">
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-400 mb-1">
+                                <span class="font-bold text-red-400">X-Axis Cut</span>
+                                <span id="val-x" class="font-mono">OFF</span>
+                            </div>
+                            <input type="range" id="clip-x" min="-20" max="20" value="20" step="0.1" oninput="updateClipping()">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-400 mb-1">
+                                <span class="font-bold text-green-400">Y-Axis Cut</span>
+                                <span id="val-y" class="font-mono">OFF</span>
+                            </div>
+                            <input type="range" id="clip-y" min="-20" max="20" value="20" step="0.1" oninput="updateClipping()">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-xs text-slate-400 mb-1">
+                                <span class="font-bold text-blue-400">Z-Axis Cut</span>
+                                <span id="val-z" class="font-mono">OFF</span>
+                            </div>
+                            <input type="range" id="clip-z" min="-20" max="20" value="20" step="0.1" oninput="updateClipping()">
+                        </div>
+                    </div>
+                    
+                    <button class="w-full mt-4 bg-slate-700 hover:bg-slate-600 text-white text-xs py-2 rounded transition-colors" onclick="resetClipping()">
+                        Reset Slicers
+                    </button>
                 </div>
 
             </div>
@@ -185,6 +215,22 @@
         let scene, camera, renderer, controls;
         let currentMesh = null;
         let baseMaterial = null;
+        let standardLights, overhangLights;
+
+        // Metrology State
+        let isMeasuring = false;
+        let measurePoints = [];
+        let measureMarkers = [];
+        let measureLine = null;
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        // Overhang State
+        let isOverhangMode = false;
+
+        // Recorded Dimensions
+        let modelDims = { x: 0, y: 0, z: 0 };
+        let modelFileName = "Unknown";
 
         // Clipping Planes
         const clipPlanes = [
@@ -199,38 +245,43 @@
             scene = new THREE.Scene();
             scene.background = new THREE.Color('#020617');
 
-            // Set Y=-10 grid for visual reference
             const gridHelper = new THREE.GridHelper(100, 100, '#334155', '#1e293b');
-            gridHelper.position.z = -10; 
+            gridHelper.position.z = -10;
             scene.add(gridHelper);
 
             camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
-            
-            // CRITICAL FIX: Tell Three.js that Z is the UP axis (Fusion 360 standard)
-            camera.up.set(0, 0, 1);
-            
+            camera.up.set(0, 0, 1); // Z-Up
             camera.position.set(30, 30, 40);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            // preserveDrawingBuffer is REQUIRED for exporting screenshots
+            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
             renderer.setSize(container.clientWidth, container.clientHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.localClippingEnabled = true; // Required for slicers
+            renderer.localClippingEnabled = true;
             container.appendChild(renderer.domElement);
 
-            // Lighting adapted for Z-Up
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-            scene.add(ambientLight);
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            dirLight.position.set(50, 50, 50); // General top-right
-            scene.add(dirLight);
-            const dirLight2 = new THREE.DirectionalLight(0x93c5fd, 0.4); 
-            dirLight2.position.set(-50, -50, -20); // General bottom-left
-            scene.add(dirLight2);
+            // LIGHTING SETUPS
+            standardLights = new THREE.Group();
+            standardLights.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const dir1 = new THREE.DirectionalLight(0xffffff, 0.8); dir1.position.set(50, 50, 50);
+            const dir2 = new THREE.DirectionalLight(0x93c5fd, 0.4); dir2.position.set(-50, -50, -20);
+            standardLights.add(dir1); standardLights.add(dir2);
+            scene.add(standardLights);
+
+            // Overhang Lighting
+            overhangLights = new THREE.Group();
+            overhangLights.add(new THREE.AmbientLight(0xffffff, 0.1));
+            const redLight1 = new THREE.DirectionalLight(0xff0000, 3.0); redLight1.position.set(0, -100, 0);
+            const redLight2 = new THREE.DirectionalLight(0xff0000, 3.0); redLight2.position.set(0, 0, -100);
+            overhangLights.add(redLight1); overhangLights.add(redLight2);
+            overhangLights.visible = false;
+            scene.add(overhangLights);
 
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
 
+            renderer.domElement.addEventListener('click', onCanvasClick, false);
             window.addEventListener('resize', onWindowResize, false);
             animate();
         }
@@ -248,10 +299,9 @@
             renderer.setSize(container.clientWidth, container.clientHeight);
         }
 
-        // --- CAMERA VIEWS (Fusion 360 Z-Up Mapping) ---
+        // --- CAMERA VIEWS ---
         function setView(viewName) {
             if (!currentMesh) return;
-            
             currentMesh.geometry.computeBoundingBox();
             const size = new THREE.Vector3();
             currentMesh.geometry.boundingBox.getSize(size);
@@ -259,7 +309,6 @@
 
             controls.target.set(0, 0, 0);
 
-            // Fusion 360 Coordinates: Z is Top/Bottom. Y is Front/Back. X is Left/Right.
             switch(viewName) {
                 case 'top':    camera.position.set(0, 0, dist); break;
                 case 'bottom': camera.position.set(0, 0, -dist); break;
@@ -269,15 +318,198 @@
                 case 'left':   camera.position.set(-dist, 0, 0); break;
                 case 'iso':    camera.position.set(dist * 0.8, -dist * 0.8, dist * 0.8); break;
             }
-            
             camera.lookAt(0, 0, 0);
             controls.update();
         }
 
-        // --- SLICER & WIREFRAME LOGIC ---
+        // --- NEW: DIGITAL CALIPERS ---
+        function toggleMeasurement() {
+            isMeasuring = !isMeasuring;
+            const btn = document.getElementById('btn-measure');
+            const container = document.getElementById('canvas-container');
+            const display = document.getElementById('measurement-display');
+
+            if (isMeasuring) {
+                btn.classList.add('bg-emerald-600', 'border-emerald-500');
+                btn.classList.remove('bg-slate-800', 'border-slate-600');
+                container.classList.add('measure-active');
+                display.classList.remove('hidden');
+                clearMeasurements();
+            } else {
+                btn.classList.remove('bg-emerald-600', 'border-emerald-500');
+                btn.classList.add('bg-slate-800', 'border-slate-600');
+                container.classList.remove('measure-active');
+                display.classList.add('hidden');
+                clearMeasurements();
+            }
+        }
+
+        function onCanvasClick(event) {
+            if (!isMeasuring || !currentMesh) return;
+
+            const rect = renderer.domElement.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(currentMesh);
+
+            let validIntersection = null;
+            for (let i = 0; i < intersects.length; i++) {
+                const pt = intersects[i].point;
+                let isClipped = false;
+                for (let j = 0; j < clipPlanes.length; j++) {
+                    if (clipPlanes[j].distanceToPoint(pt) < 0) { isClipped = true; break; }
+                }
+                if (!isClipped) { validIntersection = intersects[i]; break; }
+            }
+
+            if (validIntersection) {
+                addMeasurementPoint(validIntersection.point);
+            }
+        }
+
+        function addMeasurementPoint(point) {
+            if (measurePoints.length >= 2) clearMeasurements();
+
+            measurePoints.push(point);
+
+            const sphereGeo = new THREE.SphereGeometry(0.3, 16, 16);
+            const sphereMat = new THREE.MeshBasicMaterial({ color: 0x10b981, depthTest: false }); 
+            const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+            sphere.position.copy(point);
+            sphere.renderOrder = 999;
+            scene.add(sphere);
+            measureMarkers.push(sphere);
+
+            if (measurePoints.length === 2) {
+                const lineGeo = new THREE.BufferGeometry().setFromPoints(measurePoints);
+                const lineMat = new THREE.LineBasicMaterial({ color: 0x10b981, linewidth: 3, depthTest: false });
+                measureLine = new THREE.Line(lineGeo, lineMat);
+                measureLine.renderOrder = 998;
+                scene.add(measureLine);
+
+                const distance = measurePoints[0].distanceTo(measurePoints[1]);
+                document.getElementById('dist-value').innerText = distance.toFixed(2);
+            }
+        }
+
+        function clearMeasurements() {
+            measurePoints = [];
+            measureMarkers.forEach(m => scene.remove(m));
+            measureMarkers = [];
+            if (measureLine) { scene.remove(measureLine); measureLine = null; }
+            document.getElementById('dist-value').innerText = "0.00";
+        }
+
+        // --- NEW: PRINTABILITY (OVERHANGS) ---
+        function toggleOverhangs() {
+            isOverhangMode = !isOverhangMode;
+            const btn = document.getElementById('btn-overhang');
+
+            if (isOverhangMode) {
+                btn.classList.add('bg-rose-600', 'border-rose-500');
+                btn.classList.remove('bg-slate-800', 'border-slate-600');
+                standardLights.visible = false;
+                overhangLights.visible = true;
+                if(baseMaterial) {
+                    baseMaterial.color.setHex(0xffffff); 
+                    baseMaterial.roughness = 0.9;
+                }
+            } else {
+                btn.classList.remove('bg-rose-600', 'border-rose-500');
+                btn.classList.add('bg-slate-800', 'border-slate-600');
+                standardLights.visible = true;
+                overhangLights.visible = false;
+                applyMaterialState();
+            }
+        }
+
+        // --- NEW: REPORT EXPORT (SS + TXT) ---
+        function exportReport() {
+            if (!currentMesh) { alert("Please load an STL file first."); return; }
+            
+            renderer.render(scene, camera); 
+            const dataURL = renderer.domElement.toDataURL('image/png');
+            const linkSS = document.createElement('a');
+            linkSS.download = `Nephelometer_CAD_Review_${Date.now()}.png`;
+            linkSS.href = dataURL;
+            linkSS.click();
+
+            const reportText = `SMARTPHONE NEPHELOMETER v3.0 - METROLOGY REPORT
+Date: ${new Date().toLocaleString()}
+File: ${modelFileName}
+
+=========================================
+BOUNDING BOX DIMENSIONS (Measured from STL):
+Length (Max): ${modelDims.x.toFixed(2)} mm
+Width (Mid):  ${modelDims.y.toFixed(2)} mm
+Height (Min): ${modelDims.z.toFixed(2)} mm
+=========================================
+
+Note: This report was auto-generated by the NepheloCAD Metrology Suite.`;
+
+            const blob = new Blob([reportText], { type: 'text/plain' });
+            const linkTxt = document.createElement('a');
+            linkTxt.download = `Metrology_Report_${Date.now()}.txt`;
+            linkTxt.href = URL.createObjectURL(blob);
+            linkTxt.click();
+        }
+
+        // --- NEW: RECORD PPT VIDEO ---
+        let mediaRecorder;
+        let recordedChunks = [];
+        function recordVideo() {
+            if (!currentMesh) { alert("Please load an STL file first."); return; }
+            if (mediaRecorder && mediaRecorder.state === "recording") return;
+
+            const stream = renderer.domElement.captureStream(30);
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+            
+            mediaRecorder.ondataavailable = e => { if(e.data.size > 0) recordedChunks.push(e.data); };
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `CAD_Rotation_${Date.now()}.webm`; a.click();
+                recordedChunks = [];
+                document.getElementById('recording-indicator').classList.add('hidden');
+                document.getElementById('recording-indicator').classList.remove('flex');
+            };
+
+            document.getElementById('recording-indicator').classList.remove('hidden');
+            document.getElementById('recording-indicator').classList.add('flex');
+            mediaRecorder.start();
+
+            // Auto Rotate - Z Up means we rotate around Z axis
+            const originalZ = currentMesh.rotation.z;
+            const rotateSpeed = (Math.PI * 2) / (5 * 60); 
+            
+            let frameCount = 0;
+            const maxFrames = 5 * 60; 
+            
+            function recordFrame() {
+                if (frameCount < maxFrames && mediaRecorder.state === "recording") {
+                    currentMesh.rotation.z += rotateSpeed;
+                    frameCount++;
+                    requestAnimationFrame(recordFrame);
+                } else if (mediaRecorder.state === "recording") {
+                    mediaRecorder.stop();
+                    currentMesh.rotation.z = originalZ; 
+                }
+            }
+            recordFrame();
+        }
+
+        // --- EXISTING SLICER & FILE HANDLING ---
         function applyMaterialState() {
             if (!baseMaterial) return;
             const isWireframe = document.getElementById('wireframe-toggle').checked;
+            
+            if(!isOverhangMode) {
+                baseMaterial.color.setHex(0x3b82f6);
+                baseMaterial.roughness = 0.5;
+            }
             
             baseMaterial.wireframe = isWireframe;
             baseMaterial.transparent = isWireframe;
@@ -301,7 +533,7 @@
             updateClipping();
         }
 
-        // --- FILE HANDLING ---
+        // Drag and Drop Logic
         const container = document.getElementById('canvas-container');
         const dropzone = document.getElementById('dropzone');
 
@@ -322,13 +554,11 @@
         }
 
         function loadSTL(file) {
-            // Unhide UI
+            modelFileName = file.name;
             document.getElementById('no-file-msg').style.display = 'none';
             document.getElementById('analysis-results').classList.remove('hidden');
             document.getElementById('tools-panel').classList.remove('opacity-50', 'pointer-events-none');
             document.getElementById('filename-display').innerText = file.name;
-            
-            // Permanently hide dropzone visual overlay
             document.getElementById('dropzone').classList.add('hidden');
 
             const reader = new FileReader();
@@ -338,23 +568,17 @@
                 
                 try {
                     const geometry = loader.parse(contents);
-                    
                     if (currentMesh) {
-                        scene.remove(currentMesh); 
-                        currentMesh.geometry.dispose(); 
-                        currentMesh.material.dispose();
+                        scene.remove(currentMesh); currentMesh.geometry.dispose(); currentMesh.material.dispose();
                     }
 
                     baseMaterial = new THREE.MeshPhysicalMaterial({
-                        color: 0x3b82f6, 
-                        metalness: 0.1, 
-                        roughness: 0.5,
-                        side: THREE.DoubleSide, 
-                        clippingPlanes: clipPlanes, 
-                        clipIntersection: false
+                        color: 0x3b82f6, metalness: 0.1, roughness: 0.5,
+                        side: THREE.DoubleSide, clippingPlanes: clipPlanes, clipIntersection: false
                     });
 
-                    applyMaterialState(); 
+                    applyMaterialState();
+                    if(isOverhangMode) toggleOverhangs(); 
 
                     currentMesh = new THREE.Mesh(geometry, baseMaterial);
                     
@@ -368,7 +592,7 @@
                     analyzeGeometry(geometry.boundingBox);
                     setView('iso');
                     resetClipping();
-
+                    clearMeasurements();
                 } catch (error) {
                     alert('Error parsing STL file. Ensure it is a valid 3D mesh.');
                 }
@@ -377,28 +601,15 @@
         }
 
         function analyzeGeometry(bbox) {
-            const size = new THREE.Vector3(); 
-            bbox.getSize(size);
-            
+            const size = new THREE.Vector3(); bbox.getSize(size);
             const dims = [size.x, size.y, size.z].sort((a, b) => b - a); 
             
-            updateDimCard('dim-x', dims[0], 30.0);
-            updateDimCard('dim-y', dims[1], 20.0);
-            updateDimCard('dim-z', dims[2], 15.0);
-        }
+            modelDims.x = dims[0]; modelDims.y = dims[1]; modelDims.z = dims[2];
 
-        function updateDimCard(id, measured, target) {
-            const el = document.getElementById(id);
-            const card = document.getElementById(id + '-card');
-            el.innerText = measured.toFixed(2);
-            
-            if (Math.abs(measured - target) < 0.2) {
-                el.className = "font-mono text-sm text-emerald-400"; 
-                card.style.borderColor = "#10b981";
-            } else {
-                el.className = "font-mono text-sm text-rose-400"; 
-                card.style.borderColor = "#f43f5e";
-            }
+            // Simply display the measured dimensions
+            document.getElementById('dim-x').innerText = modelDims.x.toFixed(2);
+            document.getElementById('dim-y').innerText = modelDims.y.toFixed(2);
+            document.getElementById('dim-z').innerText = modelDims.z.toFixed(2);
         }
 
         window.onload = init3D;
