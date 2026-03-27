@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STL CAD Inspector | Nephelometer v3.0</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Three.js and Required Loaders -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .drag-active { border-color: #3b82f6 !important; background-color: rgba(59, 130, 246, 0.1) !important; }
+        #canvas-container { width: 100%; height: 100%; position: relative; cursor: grab; }
+        #canvas-container:active { cursor: grabbing; }
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #1e293b; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        
+        /* Custom Sliders */
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #3b82f6; cursor: pointer; margin-top: -6px; box-shadow: 0 0 5px rgba(0,0,0,0.5); }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #334155; border-radius: 2px; }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col">
+
+    <!-- Navbar -->
+    <nav class="bg-slate-900 border-b border-slate-800 h-16 flex items-center px-6 justify-between flex-shrink-0 z-10 shadow-md">
+        <div class="flex items-center space-x-3">
+            <span class="text-2xl">🧊</span>
+            <span class="font-bold text-xl tracking-tight text-white">CAD<span class="text-brand-500 text-blue-500">Inspector</span></span>
+            <span class="ml-4 px-2.5 py-0.5 rounded text-xs font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">v3.0 Internal Verification</span>
+        </div>
+        <div>
+            <label for="file-upload" class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-md text-sm font-semibold transition-colors shadow-sm flex items-center gap-2">
+                <span>📁</span> Load .STL File
+            </label>
+            <input id="file-upload" type="file" accept=".stl" class="hidden" onchange="handleFileSelect(event)">
+        </div>
+    </nav>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- LEFT: 3D Viewer -->
+        <div class="flex-1 relative bg-slate-950 flex flex-col">
+            <div id="dropzone" class="absolute inset-4 border-2 border-dashed border-slate-700 rounded-xl flex items-center justify-center bg-slate-900/50 z-20 transition-all pointer-events-none">
+                <div class="text-center">
+                    <span class="text-4xl block mb-2">📥</span>
+                    <p class="text-slate-400 font-medium">Drag & Drop your <span class="text-blue-400">.stl</span> file here</p>
+                </div>
+            </div>
+
+            <div id="canvas-container"></div>
+            
+            <!-- Controls Hint -->
+            <div class="absolute bottom-4 left-4 bg-slate-900/80 backdrop-blur border border-slate-700 p-3 rounded-lg text-xs text-slate-400 flex gap-4 pointer-events-none z-10">
+                <div class="flex items-center gap-1"><span>🖱️</span> Left Click: Rotate</div>
+                <div class="flex items-center gap-1"><span>🖱️</span> Right Click: Pan</div>
+                <div class="flex items-center gap-1"><span>↕️</span> Scroll: Zoom</div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Tools & Views (380px wide) -->
+        <div class="w-[380px] bg-slate-900 border-l border-slate-800 flex flex-col flex-shrink-0 z-10 shadow-xl overflow-y-auto custom-scroll">
+            
+            <!-- 1. File Info Panel -->
+            <div class="p-5 border-b border-slate-800 bg-slate-800/30">
+                <div id="no-file-msg" class="text-sm text-slate-500 text-center py-2">Load an STL to begin inspection.</div>
+                
+                <div id="analysis-results" class="hidden space-y-4">
+                    <div class="flex justify-between items-end mb-2">
+                        <span class="text-[10px] uppercase font-bold text-slate-500">Loaded File</span>
+                        <span id="filename-display" class="font-mono text-xs text-blue-400 truncate max-w-[200px]"></span>
+                    </div>
+                    
+                    <div class="bg-slate-900 rounded border border-slate-700 p-3">
+                        <div class="text-xs font-bold text-slate-400 uppercase mb-2 flex justify-between">
+                            <span>Bounding Box (X,Y,Z)</span>
+                            <span class="text-[10px] bg-slate-800 px-1 rounded">Target: 30x20x15</span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 text-center">
+                            <div class="bg-slate-800 rounded p-1.5 border border-slate-700" id="dim-x-card">
+                                <div class="text-[10px] text-slate-500 font-bold">L (max)</div>
+                                <div class="font-mono text-sm" id="dim-x">--</div>
+                            </div>
+                            <div class="bg-slate-800 rounded p-1.5 border border-slate-700" id="dim-y-card">
+                                <div class="text-[10px] text-slate-500 font-bold">W (mid)</div>
+                                <div class="font-mono text-sm" id="dim-y">--</div>
+                            </div>
+                            <div class="bg-slate-800 rounded p-1.5 border border-slate-700" id="dim-z-card">
+                                <div class="text-[10px] text-slate-500 font-bold">H (min)</div>
+                                <div class="font-mono text-sm" id="dim-z">--</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Interactive Tools -->
+            <div class="p-5 flex-1 opacity-50 pointer-events-none transition-opacity space-y-6" id="tools-panel">
+                
+                <!-- CAD Navigation Views (Fusion 360 Style) -->
+                <div>
+                    <h2 class="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <span>🎥</span> Camera Views
+                    </h2>
+                    
+                    <!-- View Cube Button Layout -->
+                    <div class="grid grid-cols-3 gap-2 mb-2">
+                        <button class="bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 rounded p-2 text-xs font-semibold text-slate-300 transition-colors" onclick="setView('top')">Top</button>
+                        <button class="bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 rounded p-2 text-xs font-semibold text-slate-300 transition-colors" onclick="setView('front')">Front</button>
+                        <button class="bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 rounded p-2 text-xs font-semibold text-slate-300 transition-colors" onclick="setView('right')">Right</button>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 mb-2">
+                        <button class="bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 rounded p-2 text-xs font-semibold text-slate-300 transition-colors" onclick="setView('bottom')">Bottom</button>
+                        <button class="bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 rounded p-2 text-xs font-semibold text-slate-300 transition-colors" onclick="setView('back')">Back</button>
+                        <button class="bg-slate-800 hover:bg-blue-600 border border-slate-700 hover:border-blue-500 rounded p-2 text-xs font-semibold text-slate-300 transition-colors" onclick="setView('left')">Left</button>
+                    </div>
+                    <button class="w-full bg-slate-700 hover:bg-blue-600 border border-slate-600 hover:border-blue-500 rounded p-2 text-xs font-bold text-white transition-colors flex justify-center items-center gap-2" onclick="setView('iso')">
+                        <span>📐</span> Isometric (Default)
+                    </button>
+                </div>
+
+                <!-- X-Ray & Cross-Section Slicers -->
+                <div>
+                    <h2 class="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <span>✂️</span> X-Ray & Slicers
+                    </h2>
+                    
+                    <div class="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
+                        <!-- Wireframe Toggle -->
+                        <div class="flex justify-between items-center mb-5 pb-4 border-b border-slate-700">
+                            <span class="text-sm font-semibold text-slate-200">X-Ray (Wireframe)</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="wireframe-toggle" class="sr-only peer" onchange="applyMaterialState()">
+                                <div class="w-9 h-5 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                            </label>
+                        </div>
+
+                        <!-- X, Y, Z Sliders -->
+                        <div class="space-y-4">
+                            <div>
+                                <div class="flex justify-between text-xs text-slate-400 mb-1">
+                                    <span class="font-bold text-red-400">X-Axis Cut</span>
+                                    <span id="val-x" class="font-mono">OFF</span>
+                                </div>
+                                <input type="range" id="clip-x" min="-20" max="20" value="20" step="0.1" oninput="updateClipping()">
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-xs text-slate-400 mb-1">
+                                    <span class="font-bold text-green-400">Y-Axis Cut</span>
+                                    <span id="val-y" class="font-mono">OFF</span>
+                                </div>
+                                <input type="range" id="clip-y" min="-20" max="20" value="20" step="0.1" oninput="updateClipping()">
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-xs text-slate-400 mb-1">
+                                    <span class="font-bold text-blue-400">Z-Axis Cut</span>
+                                    <span id="val-z" class="font-mono">OFF</span>
+                                </div>
+                                <input type="range" id="clip-z" min="-20" max="20" value="20" step="0.1" oninput="updateClipping()">
+                            </div>
+                        </div>
+                        
+                        <button class="w-full mt-4 bg-slate-700 hover:bg-slate-600 text-white text-xs py-2 rounded transition-colors" onclick="resetClipping()">
+                            Reset Slicers
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- THREE.JS SETUP ---
+        let scene, camera, renderer, controls;
+        let currentMesh = null;
+        let baseMaterial = null;
+
+        // Clipping Planes
+        const clipPlanes = [
+            new THREE.Plane(new THREE.Vector3(-1, 0, 0), 20), // X
+            new THREE.Plane(new THREE.Vector3(0, -1, 0), 20), // Y
+            new THREE.Plane(new THREE.Vector3(0, 0, -1), 20)  // Z
+        ];
+
+        function init3D() {
+            const container = document.getElementById('canvas-container');
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color('#020617');
+
+            // Set Y=-10 grid for visual reference
+            const gridHelper = new THREE.GridHelper(100, 100, '#334155', '#1e293b');
+            gridHelper.position.z = -10; 
+            scene.add(gridHelper);
+
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+            
+            // CRITICAL FIX: Tell Three.js that Z is the UP axis (Fusion 360 standard)
+            camera.up.set(0, 0, 1);
+            
+            camera.position.set(30, 30, 40);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.localClippingEnabled = true; // Required for slicers
+            container.appendChild(renderer.domElement);
+
+            // Lighting adapted for Z-Up
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(50, 50, 50); // General top-right
+            scene.add(dirLight);
+            const dirLight2 = new THREE.DirectionalLight(0x93c5fd, 0.4); 
+            dirLight2.position.set(-50, -50, -20); // General bottom-left
+            scene.add(dirLight2);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            window.addEventListener('resize', onWindowResize, false);
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        // --- CAMERA VIEWS (Fusion 360 Z-Up Mapping) ---
+        function setView(viewName) {
+            if (!currentMesh) return;
+            
+            currentMesh.geometry.computeBoundingBox();
+            const size = new THREE.Vector3();
+            currentMesh.geometry.boundingBox.getSize(size);
+            const dist = Math.max(size.x, size.y, size.z) * 1.5;
+
+            controls.target.set(0, 0, 0);
+
+            // Fusion 360 Coordinates: Z is Top/Bottom. Y is Front/Back. X is Left/Right.
+            switch(viewName) {
+                case 'top':    camera.position.set(0, 0, dist); break;
+                case 'bottom': camera.position.set(0, 0, -dist); break;
+                case 'front':  camera.position.set(0, -dist, 0); break;
+                case 'back':   camera.position.set(0, dist, 0); break;
+                case 'right':  camera.position.set(dist, 0, 0); break;
+                case 'left':   camera.position.set(-dist, 0, 0); break;
+                case 'iso':    camera.position.set(dist * 0.8, -dist * 0.8, dist * 0.8); break;
+            }
+            
+            camera.lookAt(0, 0, 0);
+            controls.update();
+        }
+
+        // --- SLICER & WIREFRAME LOGIC ---
+        function applyMaterialState() {
+            if (!baseMaterial) return;
+            const isWireframe = document.getElementById('wireframe-toggle').checked;
+            
+            baseMaterial.wireframe = isWireframe;
+            baseMaterial.transparent = isWireframe;
+            baseMaterial.opacity = isWireframe ? 0.3 : 1.0;
+        }
+
+        function updateClipping() {
+            clipPlanes[0].constant = parseFloat(document.getElementById('clip-x').value);
+            clipPlanes[1].constant = parseFloat(document.getElementById('clip-y').value);
+            clipPlanes[2].constant = parseFloat(document.getElementById('clip-z').value);
+
+            document.getElementById('val-x').innerText = (clipPlanes[0].constant === 20 ? "OFF" : clipPlanes[0].constant.toFixed(1) + " mm");
+            document.getElementById('val-y').innerText = (clipPlanes[1].constant === 20 ? "OFF" : clipPlanes[1].constant.toFixed(1) + " mm");
+            document.getElementById('val-z').innerText = (clipPlanes[2].constant === 20 ? "OFF" : clipPlanes[2].constant.toFixed(1) + " mm");
+        }
+
+        function resetClipping() {
+            document.getElementById('clip-x').value = 20;
+            document.getElementById('clip-y').value = 20;
+            document.getElementById('clip-z').value = 20;
+            updateClipping();
+        }
+
+        // --- FILE HANDLING ---
+        const container = document.getElementById('canvas-container');
+        const dropzone = document.getElementById('dropzone');
+
+        container.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.remove('opacity-0', 'hidden'); dropzone.classList.add('drag-active', 'opacity-100'); });
+        container.addEventListener('dragleave', (e) => { e.preventDefault(); dropzone.classList.remove('drag-active', 'opacity-100'); dropzone.classList.add('opacity-0'); });
+        container.addEventListener('drop', (e) => {
+            e.preventDefault(); dropzone.classList.remove('drag-active', 'opacity-100'); dropzone.classList.add('opacity-0', 'hidden');
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                const file = e.dataTransfer.files[0];
+                if (file.name.toLowerCase().endsWith('.stl')) loadSTL(file);
+                else alert('Please upload an .stl file.');
+            }
+        });
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) loadSTL(file);
+        }
+
+        function loadSTL(file) {
+            // Unhide UI
+            document.getElementById('no-file-msg').style.display = 'none';
+            document.getElementById('analysis-results').classList.remove('hidden');
+            document.getElementById('tools-panel').classList.remove('opacity-50', 'pointer-events-none');
+            document.getElementById('filename-display').innerText = file.name;
+            
+            // Permanently hide dropzone visual overlay
+            document.getElementById('dropzone').classList.add('hidden');
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const contents = e.target.result;
+                const loader = new THREE.STLLoader();
+                
+                try {
+                    const geometry = loader.parse(contents);
+                    
+                    if (currentMesh) {
+                        scene.remove(currentMesh); 
+                        currentMesh.geometry.dispose(); 
+                        currentMesh.material.dispose();
+                    }
+
+                    baseMaterial = new THREE.MeshPhysicalMaterial({
+                        color: 0x3b82f6, 
+                        metalness: 0.1, 
+                        roughness: 0.5,
+                        side: THREE.DoubleSide, 
+                        clippingPlanes: clipPlanes, 
+                        clipIntersection: false
+                    });
+
+                    applyMaterialState(); 
+
+                    currentMesh = new THREE.Mesh(geometry, baseMaterial);
+                    
+                    geometry.computeBoundingBox();
+                    const center = new THREE.Vector3();
+                    geometry.boundingBox.getCenter(center);
+                    currentMesh.position.sub(center); 
+                    
+                    scene.add(currentMesh);
+
+                    analyzeGeometry(geometry.boundingBox);
+                    setView('iso');
+                    resetClipping();
+
+                } catch (error) {
+                    alert('Error parsing STL file. Ensure it is a valid 3D mesh.');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function analyzeGeometry(bbox) {
+            const size = new THREE.Vector3(); 
+            bbox.getSize(size);
+            
+            const dims = [size.x, size.y, size.z].sort((a, b) => b - a); 
+            
+            updateDimCard('dim-x', dims[0], 30.0);
+            updateDimCard('dim-y', dims[1], 20.0);
+            updateDimCard('dim-z', dims[2], 15.0);
+        }
+
+        function updateDimCard(id, measured, target) {
+            const el = document.getElementById(id);
+            const card = document.getElementById(id + '-card');
+            el.innerText = measured.toFixed(2);
+            
+            if (Math.abs(measured - target) < 0.2) {
+                el.className = "font-mono text-sm text-emerald-400"; 
+                card.style.borderColor = "#10b981";
+            } else {
+                el.className = "font-mono text-sm text-rose-400"; 
+                card.style.borderColor = "#f43f5e";
+            }
+        }
+
+        window.onload = init3D;
+
+    </script>
+</body>
+</html>
